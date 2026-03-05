@@ -1,0 +1,83 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Playfair Display", serif;
+  --font-mono: "JetBrains Mono", monospace;
+  
+  --color-navy-950: #050505;
+  --color-navy-900: #0A0A0B;
+  --color-navy-800: #111111;
+  --color-navy-700: #1A1A1A;
+  --color-navy-600: #222222;
+  --color-accent: #00D1FF;
+  
+  --background-image-logo-gradient: linear-gradient(135deg, #0047FF 0%, #00D1FF 100%);
+}
+
+@layer base {
+  :root {
+    --fluid-min-width: 320;
+    --fluid-max-width: 1200;
+    --fluid-screen: 100vw;
+    --fluid-bp: calc((var(--fluid-screen) - var(--fluid-min-width) * 1px) / (var(--fluid-max-width) - var(--fluid-min-width)));
+  }
+
+  body {
+    @apply font-sans bg-navy-950 text-white antialiased selection:bg-accent selection:text-navy-950;
+    font-size: clamp(0.875rem, 0.8rem + 0.375vw, 1.125rem);
+  }
+  
+  h1 { @apply text-4xl md:text-5xl lg:text-7xl font-black tracking-tighter leading-[0.85] uppercase; }
+  h2 { @apply text-3xl md:text-4xl lg:text-5xl font-bold tracking-tight leading-[0.9] uppercase; }
+  h3 { @apply text-2xl md:text-3xl font-bold tracking-tight; }
+  h4 { @apply text-xl font-bold; }
+}
+
+.clean-card {
+  @apply bg-navy-900/40 backdrop-blur-xl border border-white/5 rounded-[2.5rem] shadow-sm hover:shadow-2xl hover:shadow-blue-500/5 transition-all duration-700;
+}
+
+.input-field {
+  @apply w-full px-6 py-4 bg-white/5 border border-white/5 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium placeholder:text-white/20 text-white;
+}
+
+.btn-primary {
+  @apply bg-logo-gradient text-white px-8 py-4 rounded-2xl font-bold hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 shadow-xl shadow-blue-500/20 uppercase tracking-widest text-[10px];
+}
+
+.btn-outline {
+  @apply border-2 border-white/10 text-white px-8 py-4 rounded-2xl font-bold hover:bg-white/5 transition-all active:scale-95 uppercase tracking-widest text-[10px];
+}
+
+.glass-panel {
+  @apply bg-navy-900/80 backdrop-blur-2xl border border-white/10 shadow-2xl;
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-white/10 rounded-full;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  @apply bg-white/20;
+}
+
+/* Data Grid Styles */
+.data-grid-row {
+  @apply grid grid-cols-4 p-4 border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer;
+}
+
+.data-label {
+  @apply font-mono text-[10px] uppercase tracking-widest text-white/30;
+}
+
+.data-value {
+  @apply font-mono text-xs text-white;
+}
