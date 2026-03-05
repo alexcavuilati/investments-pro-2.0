@@ -227,7 +227,7 @@ async function startServer() {
   const io = new Server(httpServer, {
     cors: { origin: "*" }
   });
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3000;
 
   app.use(express.json());
   app.use(cors());
@@ -308,14 +308,14 @@ async function startServer() {
     try {
       const { email, password, name } = req.body;
       const hashedPassword = await bcrypt.hash(password, 10);
-      
+
       // Set trial to 3 days from now
       const trialEndsAt = new Date();
       trialEndsAt.setDate(trialEndsAt.getDate() + 3);
-      
+
       const result = db.prepare("INSERT INTO users (email, password, name, trial_ends_at) VALUES (?, ?, ?, ?)")
         .run(email, hashedPassword, name, trialEndsAt.toISOString());
-      
+
       const user = { id: result.lastInsertRowid, email, name, trial_ends_at: trialEndsAt.toISOString() };
       const token = jwt.sign(user, JWT_SECRET, { expiresIn: '24h' });
       res.json({ token, user });
@@ -331,7 +331,7 @@ async function startServer() {
     try {
       const { email, password } = req.body;
       const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email) as any;
-      
+
       if (!user || !(await bcrypt.compare(password, user.password))) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
@@ -454,13 +454,13 @@ async function startServer() {
 
   app.post("/api/projects", authenticateToken, (req: any, res) => {
     try {
-      const { 
-        name, country, state_province, city_district, 
+      const {
+        name, country, state_province, city_district,
         purchase_price, fiscal_variables,
-        projected_roi, irr, npv_estimate, loan_readiness_score, eoi_ready, 
+        projected_roi, irr, npv_estimate, loan_readiness_score, eoi_ready,
         jurisdiction_laws, risk_assessment, climate_risk, iot_twin, liquidity, deal_hunter
       } = req.body;
-      
+
       const result = db.prepare(`
         INSERT INTO projects (
           user_id, name, country, state_province, city_district, 
@@ -512,7 +512,7 @@ async function startServer() {
     try {
       const { is_active, discount_threshold, max_bid_usd, auto_eoi_drafting, strategy_notes } = req.body;
       const existing = db.prepare("SELECT id FROM deal_hunter_settings WHERE user_id = ?").get(req.user.id);
-      
+
       if (existing) {
         db.prepare(`
           UPDATE deal_hunter_settings 
@@ -525,7 +525,7 @@ async function startServer() {
           VALUES (?, ?, ?, ?, ?, ?)
         `).run(req.user.id, is_active, discount_threshold, max_bid_usd, auto_eoi_drafting, strategy_notes);
       }
-      
+
       logActivity(req.user.id, "DEAL_HUNTER_CONFIGURED", "Updated Deal Hunter agent settings");
       res.json({ success: true });
     } catch (error: any) {
