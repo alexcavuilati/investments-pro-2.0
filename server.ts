@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
@@ -9,6 +10,7 @@ import { Server } from "socket.io";
 import Stripe from "stripe";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
