@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, Target, Zap, FileText, Settings, Play, Pause, Save, Info, AlertCircle, TrendingUp, Search, Activity } from 'lucide-react';
+import { Bot, Target, Zap, FileText, Settings, Play, Pause, Save, Info, AlertCircle, TrendingUp, Search, Activity, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { safeFetch } from '../utils/api';
@@ -24,6 +24,7 @@ export function DealHunter() {
   const [saving, setSaving] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [aiReasoning, setAiReasoning] = useState('Initializing market scan...');
+  const [selectedDealForEOI, setSelectedDealForEOI] = useState<Deal | null>(null);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -227,7 +228,10 @@ export function DealHunter() {
                         <span className="text-emerald-400 font-black text-xl tracking-tighter">-{deal.discount}%</span>
                         <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">Below Market</span>
                       </div>
-                      <button className="btn-primary px-6 py-3 text-[10px] font-black uppercase tracking-widest">
+                      <button 
+                        onClick={() => setSelectedDealForEOI(deal)}
+                        className="btn-primary px-6 py-3 text-[10px] font-black uppercase tracking-widest"
+                      >
                         Review EOI
                       </button>
                     </motion.div>
@@ -278,6 +282,92 @@ export function DealHunter() {
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {selectedDealForEOI && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-navy-900 border border-white/10 rounded-[2.5rem] max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl"
+            >
+              <div className="p-8 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-logo-gradient rounded-2xl flex items-center justify-center text-white">
+                    <FileText size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-white tracking-tight">Expression of Interest</h3>
+                    <p className="text-[10px] text-white/30 font-black uppercase tracking-widest">Drafted by Agentic Deal Hunter</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedDealForEOI(null)}
+                  className="p-2 hover:bg-white/10 rounded-full text-white/40 transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+              
+              <div className="p-8 overflow-y-auto flex-1 space-y-8 custom-scrollbar">
+                <div className="p-6 bg-white/5 rounded-2xl border border-white/5 space-y-4">
+                  <div className="flex justify-between items-center text-[10px] font-black text-white/20 uppercase tracking-widest">
+                    <span>Reference: EOI-{selectedDealForEOI.id.toUpperCase()}</span>
+                    <span>Date: {new Date().toLocaleDateString()}</span>
+                  </div>
+                  <div className="text-sm text-white/80 leading-relaxed font-medium space-y-4">
+                    <p>To the Vendor of {selectedDealForEOI.name},</p>
+                    <p>We are pleased to submit this non-binding Expression of Interest for the acquisition of the property located at {selectedDealForEOI.location}.</p>
+                    <div className="grid grid-cols-2 gap-6 py-4 border-y border-white/5 my-6">
+                      <div>
+                        <p className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-1">Proposed Price</p>
+                        <p className="text-xl font-black text-white">${selectedDealForEOI.price.toLocaleString()} USD</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-1">Settlement Period</p>
+                        <p className="text-xl font-black text-white">30 Days</p>
+                      </div>
+                    </div>
+                    <p>Our offer is based on the current market analysis and the distressed nature of the asset as identified by our proprietary AI algorithms.</p>
+                    <p>We are prepared to move to formal due diligence immediately upon acceptance of this EOI.</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4 p-4 bg-blue-500/10 border border-blue-500/20 rounded-2xl">
+                  <Info size={20} className="text-blue-400 shrink-0" />
+                  <p className="text-[10px] text-blue-400 font-black uppercase tracking-widest leading-relaxed">
+                    This document is a draft generated by your Deal Hunter agent. Review all terms before formal submission.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-8 bg-white/[0.02] border-t border-white/5 flex gap-4">
+                <button 
+                  onClick={() => setSelectedDealForEOI(null)}
+                  className="flex-1 py-4 bg-white/5 text-white rounded-2xl font-black text-sm hover:bg-white/10 transition-all"
+                >
+                  Save as Draft
+                </button>
+                <button 
+                  onClick={() => {
+                    alert('EOI submitted to vendor queue.');
+                    setSelectedDealForEOI(null);
+                  }}
+                  className="flex-1 py-4 bg-logo-gradient text-white rounded-2xl font-black text-sm hover:opacity-90 transition-all shadow-xl shadow-blue-500/20"
+                >
+                  Submit EOI
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

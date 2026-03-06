@@ -3,6 +3,17 @@ import { Activity, Thermometer, Zap, Shield, AlertCircle, RefreshCw } from 'luci
 import { motion } from 'motion/react';
 
 export function DigitalTwin() {
+  const [isSyncing, setIsSyncing] = React.useState(false);
+  const [lastSync, setLastSync] = React.useState(new Date());
+
+  const handleSync = () => {
+    setIsSyncing(true);
+    setTimeout(() => {
+      setIsSyncing(false);
+      setLastSync(new Date());
+    }, 2000);
+  };
+
   const assets = [
     { id: 1, name: 'Savusavu Resort B1', hvac: 'HEALTHY', structural: 98, energy: 85, temp: 22, alerts: [] },
     { id: 2, name: 'Sydney Wharf Loft', hvac: 'WARNING', structural: 94, energy: 72, temp: 24, alerts: ['HVAC Compressor Vibration Detected'] },
@@ -16,9 +27,17 @@ export function DigitalTwin() {
           <h1 className="text-white mb-2">IoT Digital Twin</h1>
           <p className="text-white/40 font-medium">Real-time asset health monitoring and predictive maintenance.</p>
         </div>
-        <button className="flex items-center justify-center gap-3 px-6 py-3 bg-white/5 rounded-2xl text-xs font-black text-white hover:bg-white/10 transition-all active:scale-95 border border-white/5">
-          <RefreshCw size={16} /> Sync Sensors
-        </button>
+        <div className="flex flex-col items-end gap-2">
+          <button 
+            onClick={handleSync}
+            disabled={isSyncing}
+            className="flex items-center justify-center gap-3 px-6 py-3 bg-white/5 rounded-2xl text-xs font-black text-white hover:bg-white/10 transition-all active:scale-95 border border-white/5 disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={isSyncing ? 'animate-spin' : ''} /> 
+            {isSyncing ? 'Syncing Sensors...' : 'Sync Sensors'}
+          </button>
+          <span className="text-[8px] font-black text-white/20 uppercase tracking-widest">Last Sync: {lastSync.toLocaleTimeString()}</span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:gap-12">

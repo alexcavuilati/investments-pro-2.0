@@ -1,10 +1,21 @@
 import React, { useState } from 'react';
 import { Coins, ArrowRightLeft, ShieldCheck, TrendingUp, Wallet, ExternalLink } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 
 export function FractionalLiquidity() {
   const [shardsToTrade, setShardsToTrade] = useState(10);
+  const [isSwapping, setIsSwapping] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
   
+  const handleSwap = () => {
+    setIsSwapping(true);
+    setTimeout(() => {
+      setIsSwapping(false);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 5000);
+    }, 2000);
+  };
+
   const assets = [
     { id: 1, name: 'Savusavu Resort', total: 10000, owned: 1200, price: 125.50, trend: '+4.2%' },
     { id: 2, name: 'Dubai Marina Penthouse', total: 50000, owned: 500, price: 412.00, trend: '+1.8%' },
@@ -89,9 +100,25 @@ export function FractionalLiquidity() {
                 </div>
               </div>
             </div>
-            <button className="w-full py-5 bg-logo-gradient text-white rounded-2xl font-black text-sm hover:opacity-90 transition-all active:scale-95 shadow-xl shadow-blue-500/20 relative z-10">
-              Confirm Blockchain Swap
+            <button 
+              onClick={handleSwap}
+              disabled={isSwapping}
+              className="w-full py-5 bg-logo-gradient text-white rounded-2xl font-black text-sm hover:opacity-90 transition-all active:scale-95 shadow-xl shadow-blue-500/20 relative z-10 disabled:opacity-50"
+            >
+              {isSwapping ? 'Executing Blockchain Swap...' : 'Confirm Blockchain Swap'}
             </button>
+            <AnimatePresence>
+              {showSuccess && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-[10px] text-emerald-400 font-black uppercase tracking-widest text-center mt-4"
+                >
+                  Swap Confirmed! Transaction Hash: 0x{Math.random().toString(16).substr(2, 40)}
+                </motion.div>
+              )}
+            </AnimatePresence>
             <div className="flex items-center justify-center gap-2 text-[10px] font-black text-white/20 uppercase tracking-widest relative z-10">
               <ShieldCheck size={14} /> Secured by PropChain L2 Bridge
             </div>
