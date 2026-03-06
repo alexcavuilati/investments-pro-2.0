@@ -12,6 +12,10 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@capacitor/android": "^7.6.0",
+    "@capacitor/cli": "^7.6.0",
+    "@capacitor/core": "^7.6.0",
+    "@capacitor/ios": "^7.6.0",
     "@google/genai": "^1.29.0",
     "@stripe/react-stripe-js": "^5.6.0",
     "@stripe/stripe-js": "^8.8.0",

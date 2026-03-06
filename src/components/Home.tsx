@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Image as ImageIcon, Heart, MessageCircle, Share2, TrendingUp, Globe, Zap, MapPin, DollarSign, Calculator, ChevronDown, ChevronUp, Shield, Info, AlertTriangle, BarChart3 } from 'lucide-react';
+import { Send, Image as ImageIcon, Heart, MessageCircle, Share2, TrendingUp, Globe, Zap, MapPin, DollarSign, Calculator, ChevronDown, ChevronUp, Shield, Info, AlertTriangle, BarChart3, Smartphone, Apple } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { safeFetch } from '../utils/api';
 import { Post, GLOBAL_JURISDICTION_DATA } from '../types';
@@ -47,8 +47,8 @@ export const Home: React.FC = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ 
-          content: newPost, 
+        body: JSON.stringify({
+          content: newPost,
           image_url: imageUrl,
           type: postType,
           country: postType === 'LISTING' ? country : undefined,
@@ -120,8 +120,42 @@ export const Home: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-8">
+      {/* Mobile App Promo */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-logo-gradient p-6 rounded-3xl shadow-2xl relative overflow-hidden group"
+      >
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-32 -mt-32 group-hover:scale-110 transition-transform duration-700"></div>
+        <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="space-y-2">
+            <h3 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
+              <Zap className="fill-white" />
+              INVESTMENTS PRO MOBILE
+            </h3>
+            <p className="text-white/80 text-sm font-medium">Take fiscal intelligence anywhere. Download the official app for your device.</p>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => alert('Android APK build in progress... Ready soon!')}
+              className="px-6 py-3 bg-white text-navy-900 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-xl"
+            >
+              <Smartphone size={16} />
+              Android APK
+            </button>
+            <button
+              onClick={() => alert('For iOS, please use "Add to Home Screen" (PWA) until App Store launch!')}
+              className="px-6 py-3 bg-white/20 backdrop-blur-md text-white border border-white/20 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center gap-2 hover:bg-white/30 transition-all"
+            >
+              <Apple size={16} />
+              iOS (PWA)
+            </button>
+          </div>
+        </div>
+      </motion.div>
+
       {/* Create Post */}
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="bg-navy-900/50 backdrop-blur-md border border-white/10 rounded-2xl p-6 shadow-xl"
@@ -157,10 +191,10 @@ export const Home: React.FC = () => {
                 placeholder={postType === 'LISTING' ? "Describe your property listing..." : "What's happening in the global market?"}
                 className="w-full bg-black/30 border border-white/10 rounded-xl p-4 text-white placeholder-white/30 focus:outline-none focus:border-accent-blue/50 resize-none h-24"
               />
-              
+
               <AnimatePresence>
                 {postType === 'LISTING' && (
-                  <motion.div 
+                  <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
@@ -215,7 +249,7 @@ export const Home: React.FC = () => {
           </div>
           <div className="flex items-center justify-between">
             <div className="flex gap-2">
-              <button 
+              <button
                 type="button"
                 onClick={() => setImageUrl(prompt('Enter image URL:') || '')}
                 className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-accent-blue transition-colors"
@@ -250,10 +284,10 @@ export const Home: React.FC = () => {
           </div>
         ) : (
           posts.map((post, idx) => (
-            <PostCard 
-              key={post.id} 
-              post={post} 
-              idx={idx} 
+            <PostCard
+              key={post.id}
+              post={post}
+              idx={idx}
               onRunAnalysis={runAnalysis}
               onLike={() => handleLike(post.id)}
               isAnalyzing={analyzingId === post.id}
@@ -265,9 +299,9 @@ export const Home: React.FC = () => {
   );
 };
 
-const PostCard: React.FC<{ 
-  post: Post; 
-  idx: number; 
+const PostCard: React.FC<{
+  post: Post;
+  idx: number;
   onRunAnalysis: (post: Post) => void;
   onLike: () => void;
   isAnalyzing: boolean;
@@ -456,7 +490,7 @@ const PostCard: React.FC<{
         )}
 
         <div className="flex items-center gap-6 pt-4 border-t border-white/5">
-          <button 
+          <button
             onClick={onLike}
             className="flex items-center gap-2 text-white/40 hover:text-red-400 transition-colors group"
           >
