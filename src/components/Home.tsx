@@ -3,12 +3,16 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Send, Image as ImageIcon, Heart, MessageCircle, Share2, TrendingUp, Globe, Zap, MapPin, DollarSign, Calculator, ChevronDown, ChevronUp, Shield, Info, AlertTriangle, BarChart3, Smartphone, Apple } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { safeFetch } from '../utils/api';
-import { Post, GLOBAL_JURISDICTION_DATA } from '../types';
+import { Post, GLOBAL_JURISDICTION_DATA, Syndicate } from '../types';
 import { fiscalIntelligence } from '../services/geminiService';
+import { SyndicateModal } from './SyndicateModal';
+import { MarketYieldAlerts } from './MarketYieldAlerts';
 
 export const Home: React.FC = () => {
   const { token, user } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
+  const [syndicates, setSyndicates] = useState<Syndicate[]>([]);
+  const [selectedSyndicate, setSelectedSyndicate] = useState<Syndicate | null>(null);
   const [newPost, setNewPost] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [postType, setPostType] = useState<'NORMAL' | 'LISTING'>('NORMAL');
@@ -32,8 +36,20 @@ export const Home: React.FC = () => {
     }
   };
 
+  const fetchSyndicates = async () => {
+    try {
+      const data = await safeFetch('/api/syndicates', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      setSyndicates(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchPosts();
+    fetchSyndicates();
   }, [token]);
 
   const handleCreatePost = async (e: React.FormEvent) => {
@@ -120,6 +136,9 @@ export const Home: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-8">
+      {/* Proactive AI Alerts */}
+      <MarketYieldAlerts country={user?.country_of_origin || 'AU'} />
+
       {/* Mobile App Promo */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -153,6 +172,70 @@ export const Home: React.FC = () => {
           </div>
         </div>
       </motion.div>
+
+      {/* Fractional Vault (Lucrative Alpha Deals) */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between px-2">
+          <h3 className="text-xs font-black text-white/40 uppercase tracking-[0.2em] flex items-center gap-2">
+            <TrendingUp size={14} className="text-accent-blue" />
+            Fractional Alpha Vault
+          </h3>
+          <span className="text-[10px] font-bold text-accent-blue bg-accent-blue/10 px-2 py-1 rounded-md uppercase">Live Deals</span>
+        </div>
+
+        <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar -mx-4 px-4 h-52">
+          {syndicates.length === 0 ? (
+            <div className="flex-1 bg-navy-900/10 border border-white/5 rounded-3xl flex items-center justify-center p-8 border-dashed">
+              <p className="text-[10px] text-white/20 font-black uppercase tracking-widest italic font-bold">Waiting for premium syndication deals...</p>
+            </div>
+          ) : (
+            syndicates.map((s) => (
+              <motion.div
+                key={s.id}
+                whileHover={{ y: -5 }}
+                className="min-w-[280px] bg-navy-900/40 backdrop-blur-md border border-white/10 rounded-3xl p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group"
+              >
+                <div className="absolute top-0 right-0 p-3">
+                  <div className="text-[10px] font-black text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20">
+                    {s.available_equity.toFixed(1)}% OPEN
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-white font-bold text-sm mb-1 truncate pr-16">{s.project_name}</h4>
+                  <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1">
+                    <MapPin size={10} /> {s.city}, {s.country}
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <p className="text-[8px] font-black text-white/20 uppercase tracking-widest">Entry Price</p>
+                      <p className="text-sm font-black text-white">${s.min_investment.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-[8px] font-black text-white/20 uppercase tracking-widest text-right">Valuation</p>
+                      <p className="text-[10px] font-black text-accent-blue text-right">${(s.total_valuation / 1000000).toFixed(1)}M</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedSyndicate(s)}
+                    className="w-full py-2.5 bg-white text-navy-950 rounded-xl font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all shadow-lg active:scale-95"
+                  >
+                    Buy Fractional Share
+                  </button>
+                </div>
+                <div className="absolute bottom-0 left-0 w-full h-1 bg-white/5">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${100 - s.available_equity}%` }}
+                    className="h-full bg-accent-blue/50"
+                  />
+                </div>
+              </motion.div>
+            ))
+          )}
+        </div>
+      </div>
 
       {/* Create Post */}
       <motion.div
@@ -295,6 +378,19 @@ export const Home: React.FC = () => {
           ))
         )}
       </div>
+      {/* Modal Portal */}
+      <AnimatePresence>
+        {selectedSyndicate && (
+          <SyndicateModal
+            syndicate={selectedSyndicate}
+            onClose={() => setSelectedSyndicate(null)}
+            onSuccess={() => {
+              fetchSyndicates();
+              fetchPosts();
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };

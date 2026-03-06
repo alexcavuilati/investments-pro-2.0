@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { safeFetch } from './utils/api';
-import { 
-  LayoutDashboard, 
-  ShieldCheck, 
-  Calculator, 
-  Newspaper, 
-  User as UserIcon, 
-  ChevronRight, 
-  Plus, 
-  FileText, 
-  TrendingUp, 
+import {
+  LayoutDashboard,
+  ShieldCheck,
+  Calculator,
+  Newspaper,
+  User as UserIcon,
+  ChevronRight,
+  Plus,
+  FileText,
+  TrendingUp,
   Globe,
   Bell,
   Search,
@@ -30,6 +30,7 @@ import {
   CloudRain,
   Menu,
   X,
+  Gavel,
   Zap
 } from 'lucide-react';
 import { User, NewsItem, Project, KYCDocument, IncentiveScheme, FiscalVariables, GLOBAL_JURISDICTION_DATA } from './types';
@@ -51,13 +52,15 @@ import { NewsFeed } from './components/NewsFeed';
 import { Profile } from './components/Profile';
 import { Home } from './components/Home';
 import { Auth } from './components/Auth';
+import { LawGPT } from './components/LawGPT';
+import { ReferralNetwork } from './components/ReferralNetwork';
 import { MarketInsights } from './components/MarketInsights';
 import { TrialOverlay } from './components/TrialOverlay';
 import { useAuth } from './context/AuthContext';
 
 export default function App() {
   const { user, token, logout, refreshUser, isLoading: authLoading } = useAuth();
-  const [activeTab, setActiveTab] = useState<'home' | 'dashboard' | 'kyc' | 'engine' | 'calculator' | 'news' | 'social' | 'profile' | 'hunter' | 'twin' | 'liquidity' | 'subscription' | 'insights'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'dashboard' | 'kyc' | 'engine' | 'calculator' | 'news' | 'social' | 'profile' | 'hunter' | 'twin' | 'liquidity' | 'subscription' | 'insights' | 'law' | 'referral'>('home');
   const [currency, setCurrency] = useState<Currency>('USD');
   const [news, setNews] = useState<NewsItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -85,21 +88,21 @@ export default function App() {
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('payment_success') === 'true') {
           const tier = urlParams.get('tier');
-            if (tier) {
-              await safeFetch('/api/update-tier', {
-                method: 'POST',
-                headers: { 
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ tier }),
-              });
-              // Refresh user data
-              await refreshUser();
-              alert(`Successfully upgraded to ${tier} tier!`);
-              // Clean up URL
-              window.history.replaceState({}, document.title, "/");
-            }
+          if (tier) {
+            await safeFetch('/api/update-tier', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ tier }),
+            });
+            // Refresh user data
+            await refreshUser();
+            alert(`Successfully upgraded to ${tier} tier!`);
+            // Clean up URL
+            window.history.replaceState({}, document.title, "/");
+          }
         }
       } catch (err) {
         console.error("Fetch error:", err);
@@ -112,8 +115,8 @@ export default function App() {
 
   if (loading || authLoading) return (
     <div className="h-screen w-screen flex items-center justify-center bg-navy-900">
-      <motion.div 
-        animate={{ scale: [1, 1.1, 1], opacity: [0.5, 1, 0.5] }} 
+      <motion.div
+        animate={{ scale: [1, 1.1, 1], opacity: [0.5, 1, 0.5] }}
         transition={{ repeat: Infinity, duration: 2 }}
         className="text-white font-display text-2xl font-bold tracking-[0.3em]"
       >
@@ -131,7 +134,7 @@ export default function App() {
       {/* Sidebar Overlay for Mobile */}
       <AnimatePresence>
         {isSidebarOpen && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -172,7 +175,8 @@ export default function App() {
           <NavItem icon={<Activity size={20} />} label="Digital Twin" active={activeTab === 'twin'} onClick={() => { setActiveTab('twin'); setIsSidebarOpen(false); }} />
           <NavItem icon={<Coins size={20} />} label="Liquidity" active={activeTab === 'liquidity'} onClick={() => { setActiveTab('liquidity'); setIsSidebarOpen(false); }} />
           <NavItem icon={<Newspaper size={20} />} label="Market Intel" active={activeTab === 'news'} onClick={() => { setActiveTab('news'); setIsSidebarOpen(false); }} />
-          <NavItem icon={<Users size={20} />} label="Social Hub" active={activeTab === 'social'} onClick={() => { setActiveTab('social'); setIsSidebarOpen(false); }} />
+          <NavItem icon={<Gavel size={20} />} label="Law-GPT" active={activeTab === 'law'} onClick={() => { setActiveTab('law'); setIsSidebarOpen(false); }} />
+          <NavItem icon={<Users size={20} />} label="Referrals" active={activeTab === 'referral'} onClick={() => { setActiveTab('referral'); setIsSidebarOpen(false); }} />
           <NavItem icon={<UserIcon size={20} />} label="Profile" active={activeTab === 'profile'} onClick={() => { setActiveTab('profile'); setIsSidebarOpen(false); }} />
           <NavItem icon={<CreditCard size={20} />} label="Subscription" active={activeTab === 'subscription'} onClick={() => { setActiveTab('subscription'); setIsSidebarOpen(false); }} />
         </nav>
@@ -188,9 +192,9 @@ export default function App() {
                 {Math.max(0, Math.ceil((new Date(user.trial_ends_at).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))} Days Remaining
               </div>
               <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-blue-500 transition-all duration-1000" 
-                  style={{ width: `${Math.max(0, Math.min(100, ( (new Date(user.trial_ends_at).getTime() - new Date().getTime()) / (3 * 24 * 60 * 60 * 1000) ) * 100))}%` }} 
+                <div
+                  className="h-full bg-blue-500 transition-all duration-1000"
+                  style={{ width: `${Math.max(0, Math.min(100, ((new Date(user.trial_ends_at).getTime() - new Date().getTime()) / (3 * 24 * 60 * 60 * 1000)) * 100))}%` }}
                 />
               </div>
             </div>
@@ -199,7 +203,7 @@ export default function App() {
             <div className="text-xs font-bold text-white/40 uppercase tracking-widest mb-1">Current Tier</div>
             <div className="flex items-center justify-between">
               <span className="font-bold text-white">{user?.tier}</span>
-              <button 
+              <button
                 onClick={() => setActiveTab('subscription')}
                 className="text-[10px] bg-logo-gradient text-white px-3 py-1.5 rounded-lg uppercase font-black hover:opacity-90 transition-all shadow-lg shadow-blue-500/10"
               >
@@ -297,6 +301,16 @@ export default function App() {
                 <SocialHub currentUser={user} />
               </motion.div>
             )}
+            {activeTab === 'law' && (
+              <motion.div key="law" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <LawGPT country={user?.country_of_origin || 'AU'} />
+              </motion.div>
+            )}
+            {activeTab === 'referral' && (
+              <motion.div key="referral" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <ReferralNetwork />
+              </motion.div>
+            )}
             {activeTab === 'profile' && (
               <motion.div key="profile" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <Profile user={user} />
@@ -311,7 +325,7 @@ export default function App() {
 
 function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active: boolean, onClick: () => void }) {
   return (
-    <button 
+    <button
       onClick={onClick}
       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-bold ${active ? 'bg-logo-gradient text-white shadow-lg shadow-blue-500/20' : 'text-white/40 hover:text-white/80 hover:bg-white/5'}`}
     >

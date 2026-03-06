@@ -1,8 +1,11 @@
-import React from 'react';
-import { motion } from 'motion/react';
-import { TrendingUp, TrendingDown, DollarSign, BarChart3, PieChart, Activity, Filter, ArrowUpRight } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { TrendingUp, TrendingDown, DollarSign, BarChart3, PieChart, Activity, Filter, ArrowUpRight, Shield, Clock, CheckCircle, AlertTriangle, Lock, ArrowLeft, Zap } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { Currency, formatCurrency } from './CurrencySwitcher';
+import { TrustVault } from './TrustVault';
+import { safeFetch } from '../utils/api';
+import { useAuth } from '../context/AuthContext';
 
 interface StatCardProps {
   title: string;
@@ -14,7 +17,7 @@ interface StatCardProps {
 
 function StatCard({ title, value, change, up, icon }: StatCardProps) {
   return (
-    <motion.div 
+    <motion.div
       whileHover={{ y: -5 }}
       className="clean-card p-8 group relative overflow-hidden"
     >
@@ -54,7 +57,138 @@ const CHART_DATA = [
 ];
 
 export function Dashboard({ projects, user, currency }: { projects: any[], user: any, currency: Currency }) {
-  const totalValue = projects.reduce((acc, p) => acc + p.purchase_price, 0);
+  const { token } = useAuth();
+  const [selectedProject, setSelectedProject] = useState<any | null>(null);
+  const [milestones, setMilestones] = useState<any[]>([]);
+  const [loadingMilestones, setLoadingMilestones] = useState(false);
+
+  const fetchMilestones = async (projectId: number) => {
+    setLoadingMilestones(true);
+    try {
+      const data = await safeFetch(`/api/projects/${projectId}/milestones`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      setMilestones(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingMilestones(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedProject) {
+      fetchMilestones(selectedProject.id);
+    }
+  }, [selectedProject]);
+
+  const handleFundEscrow = async (milestoneId: number, amount: number) => {
+    try {
+      await safeFetch('/api/escrow/fund', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ milestone_id: milestoneId, amount })
+      });
+      fetchMilestones(selectedProject.id);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const totalValue = projects.reduce((acc, p) => acc + (p.purchase_price || 0), 0);
+
+  if (selectedProject) {
+    return (
+      <div className="space-y-12 pb-20">
+        <button
+          onClick={() => setSelectedProject(null)}
+          className="flex items-center gap-2 text-white/40 hover:text-white font-black text-[10px] uppercase tracking-widest transition-all mb-8"
+        >
+          <ArrowLeft size={16} /> Back to Overview
+        </button>
+
+        <div className="flex flex-col md:flex-row justify-between items-start gap-8">
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <span className="px-3 py-1 bg-accent-blue/10 text-accent-blue text-[10px] font-black rounded-full border border-accent-blue/20 uppercase tracking-widest">Active Project</span>
+              <span className="text-white/20">•</span>
+              <span className="text-white/40 text-[10px] font-black uppercase tracking-widest">{selectedProject.country}</span>
+            </div>
+            <h1 className="text-white mb-2">{selectedProject.name}</h1>
+            <p className="text-white/40 font-medium">Project ID: EX-{selectedProject.id.toString().padStart(4, '0')}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] mb-1">Total Acquisition Cost</p>
+            <p className="text-4xl font-black text-white tracking-tighter">{formatCurrency(selectedProject.purchase_price, currency)}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+          {/* Trust Vault */}
+          <div className="clean-card p-10">
+            <TrustVault projectId={selectedProject.id} />
+          </div>
+
+          {/* Milestone Escrow */}
+          <div className="clean-card p-10 space-y-8">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-black text-white uppercase tracking-tight flex items-center gap-3">
+                <Clock className="text-accent-blue" />
+                Milestone Escrow
+              </h3>
+              <div className="flex items-center gap-2 text-[10px] font-black text-emerald-400 uppercase tracking-widest bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/20">
+                <Shield size={12} />
+                Secured
+              </div>
+            </div>
+
+            <div className="space-y-8 relative before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-white/5">
+              {loadingMilestones ? (
+                <div className="animate-pulse space-y-4">
+                  <div className="h-16 bg-white/5 rounded-2xl" />
+                  <div className="h-16 bg-white/5 rounded-2xl" />
+                </div>
+              ) : milestones.length === 0 ? (
+                <p className="text-white/20 text-xs text-center py-8">No milestones defined for this fiscal period.</p>
+              ) : (
+                milestones.map((m, idx) => (
+                  <div key={m.id} className="relative pl-10 group">
+                    <div className={`absolute left-0 top-1.5 w-6 h-6 rounded-full border-4 border-navy-950 flex items-center justify-center z-10 ${m.status === 'FUNDED' ? 'bg-emerald-500' : 'bg-white/10 group-hover:bg-accent-blue transition-colors'
+                      }`}>
+                      {m.status === 'FUNDED' && <CheckCircle size={10} className="text-white" />}
+                    </div>
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="flex-1">
+                        <h4 className="text-white font-bold text-sm mb-1">{m.title}</h4>
+                        <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest">
+                          Due: {new Date(m.due_date).toLocaleDateString()} • {formatCurrency(m.amount, currency)}
+                        </p>
+                      </div>
+                      <div className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-widest ${m.status === 'FUNDED' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-white/5 text-white/30 border border-white/10'
+                        }`}>
+                        {m.status}
+                      </div>
+                    </div>
+                    {m.status === 'PENDING' && (
+                      <button
+                        onClick={() => handleFundEscrow(m.id, m.amount)}
+                        className="mt-4 px-6 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl font-black text-[9px] uppercase tracking-widest transition-all"
+                      >
+                        Release Funds to Escrow
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-12">
@@ -94,40 +228,40 @@ export function Dashboard({ projects, user, currency }: { projects: any[], user:
               <AreaChart data={CHART_DATA}>
                 <defs>
                   <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0047FF" stopOpacity={0.1}/>
-                    <stop offset="95%" stopColor="#00D1FF" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#0047FF" stopOpacity={0.1} />
+                    <stop offset="95%" stopColor="#00D1FF" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                <XAxis 
-                  dataKey="name" 
-                  axisLine={false} 
-                  tickLine={false} 
+                <XAxis
+                  dataKey="name"
+                  axisLine={false}
+                  tickLine={false}
                   tick={{ fontSize: 10, fontWeight: 900, fill: 'rgba(255,255,255,0.3)' }}
                   dy={10}
                 />
-                <YAxis 
-                  axisLine={false} 
-                  tickLine={false} 
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
                   tick={{ fontSize: 10, fontWeight: 900, fill: 'rgba(255,255,255,0.3)' }}
                 />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: '#0A0A0B', 
-                    border: '1px solid rgba(255,255,255,0.1)', 
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#0A0A0B',
+                    border: '1px solid rgba(255,255,255,0.1)',
                     borderRadius: '1.5rem',
                     boxShadow: '0 20px 25px -5px rgba(0,0,0,0.4)',
                     padding: '1rem'
                   }}
                   itemStyle={{ fontSize: '12px', fontWeight: 900, color: '#fff' }}
                 />
-                <Area 
-                  type="monotone" 
-                  dataKey="value" 
-                  stroke="#0047FF" 
+                <Area
+                  type="monotone"
+                  dataKey="value"
+                  stroke="#0047FF"
                   strokeWidth={4}
-                  fillOpacity={1} 
-                  fill="url(#colorValue)" 
+                  fillOpacity={1}
+                  fill="url(#colorValue)"
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -143,7 +277,11 @@ export function Dashboard({ projects, user, currency }: { projects: any[], user:
           </div>
           <div className="space-y-6">
             {projects.length > 0 ? projects.slice(0, 3).map((project, i) => (
-              <div key={i} className="group p-6 bg-white/5 rounded-[2rem] border border-transparent hover:border-white/10 hover:bg-white/5 hover:shadow-xl hover:shadow-blue-500/5 transition-all duration-500 cursor-pointer">
+              <div
+                key={i}
+                onClick={() => setSelectedProject(project)}
+                className="group p-6 bg-white/5 rounded-[2rem] border border-transparent hover:border-white/10 hover:bg-white/5 hover:shadow-xl hover:shadow-blue-500/5 transition-all duration-500 cursor-pointer text-left"
+              >
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-sm font-black text-white group-hover:text-white transition-colors">{project.name}</div>
                   <ArrowUpRight size={16} className="text-white/20 group-hover:text-white transition-all" />

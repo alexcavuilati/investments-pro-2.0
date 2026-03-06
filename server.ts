@@ -154,6 +154,92 @@ db.exec(`
     deal_alerts INTEGER DEFAULT 1,
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS syndicates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER,
+    total_valuation REAL,
+    available_equity REAL, -- Percentage (0-100)
+    min_investment REAL,
+    status TEXT DEFAULT 'OPEN',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS syndicate_investments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    syndicate_id INTEGER,
+    user_id INTEGER,
+    investment_amount REAL,
+    equity_percentage REAL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(syndicate_id) REFERENCES syndicates(id),
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS legal_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER,
+    title TEXT,
+    content TEXT,
+    status TEXT DEFAULT 'DRAFT',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS document_signatures (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER,
+    user_id INTEGER,
+    signature_hash TEXT,
+    ip_address TEXT,
+    signed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(document_id) REFERENCES legal_documents(id),
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS project_milestones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER,
+    title TEXT,
+    description TEXT,
+    amount REAL,
+    status TEXT DEFAULT 'PENDING', -- PENDING, FUNDED, RELEASED, DISPUTED
+    due_date DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS escrow_vault (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    milestone_id INTEGER,
+    amount REAL,
+    status TEXT DEFAULT 'HELD',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(milestone_id) REFERENCES project_milestones(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS referrals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    referrer_id INTEGER,
+    referred_id INTEGER,
+    status TEXT DEFAULT 'PENDING', -- PENDING, COMPLETED
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(referrer_id) REFERENCES users(id),
+    FOREIGN KEY(referred_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS commission_payouts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    amount REAL,
+    source_type TEXT, -- e.g., 'SYNDICATION_REFERRAL'
+    source_id INTEGER, -- e.g., syndicate_investment_id
+    status TEXT DEFAULT 'PENDING', -- PENDING, PAID
+    payout_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
 `);
 
 // Middleware for authentication
@@ -177,6 +263,78 @@ if (newsCount.count === 0) {
   insertNews.run("Fiji SLIP Tax Update 2026", "New amendments to the Short Life Investment Package (SLIP) provide 10-year tax holidays for hotel developments over $7M FJD.", "Fiji", "Tax");
   insertNews.run("Australia FIRB Thresholds Adjusted", "Foreign Investment Review Board (FIRB) has increased thresholds for commercial real estate acquisitions in Sydney and Melbourne.", "Australia", "Legal");
   insertNews.run("UAE Golden Visa Expansion", "Dubai announces new pathways for property investors to secure 10-year residency with reduced minimum investment requirements.", "UAE", "Legal");
+}
+
+// Seed Syndicates if empty
+const syndicateCount = db.prepare("SELECT COUNT(*) as count FROM syndicates").get() as { count: number };
+if (syndicateCount.count === 0) {
+  const adminId = 1; // Assuming first user is admin
+
+  // 1. Create a Premium Project in Fiji
+  const project = db.prepare(`
+    INSERT INTO projects (user_id, name, country, state_province, city_district, purchase_price, fiscal_variables, projected_roi, irr, eoi_ready)
+    VALUES (?, 'Vuda Marina Luxury Villas', 'Fiji', 'Ba', 'Lautoka', 12000000, '{"stamp_duty":10,"vat":15}', 18.5, 22.4, 1)
+  `).run(adminId);
+
+  // 2. Create a Syndicate for this project
+  db.prepare(`
+    INSERT INTO syndicates (project_id, total_valuation, available_equity, min_investment, status)
+    VALUES (?, 12000000, 100, 250000, 'OPEN')
+  `).run(project.lastInsertRowid);
+
+  // 3. Create another Project in AU
+  const project2 = db.prepare(`
+    INSERT INTO projects (user_id, name, country, state_province, city_district, purchase_price, fiscal_variables, projected_roi, irr, eoi_ready)
+    VALUES (?, 'Sydney Harbour Loft', 'Australia', 'NSW', 'Sydney', 4500000, '{"stamp_duty":12,"gst":10}', 12.2, 14.8, 1)
+  `).run(adminId);
+
+  // 4. Create a Syndicate for this project
+  db.prepare(`
+    INSERT INTO syndicates (project_id, total_valuation, available_equity, min_investment, status)
+    VALUES (?, 4500000, 100, 50000, 'OPEN')
+  `).run(project2.lastInsertRowid);
+
+  console.log("Syndication data seeded successfully!");
+}
+
+// Seed Legal Docs & Milestones if empty
+const docCount = db.prepare("SELECT COUNT(*) as count FROM legal_documents").get() as { count: number };
+if (docCount.count === 0) {
+  // 1. Seed Legal Document for Fiji Project
+  const fijiProject = db.prepare("SELECT id FROM projects WHERE name = 'Vuda Marina Luxury Villas'").get() as any;
+  if (fijiProject) {
+    db.prepare(`
+      INSERT INTO legal_documents (project_id, title, content, status)
+      VALUES (?, 'Master Syndication Agreement', 'This agreement governs the fractional ownership of Vuda Marina Luxury Villas. By signing, the investor acknowledges the risks and confirms they have reviewed the 2026 Fiji SLIP incentives.', 'ACTIVE')
+    `).run(fijiProject.id);
+
+    // 2. Seed Milestones for Fiji Project
+    const milestones = [
+      { title: 'Project Initiation & Escrow Setup', amount: 50000, due: '2026-06-01' },
+      { title: 'Groundbreaking & Site Prep', amount: 150000, due: '2026-09-15' },
+      { title: 'Structural Completion (Phase 1)', amount: 300000, due: '2027-02-10' }
+    ];
+
+    const insertMilestone = db.prepare(`
+      INSERT INTO project_milestones (project_id, title, amount, due_date, status)
+      VALUES (?, ?, ?, ?, 'PENDING')
+    `);
+
+    milestones.forEach(m => insertMilestone.run(fijiProject.id, m.title, m.amount, m.due));
+  }
+}
+
+// Seed Referral Data for demonstration
+const refCount = db.prepare("SELECT COUNT(*) as count FROM referrals").get() as { count: number };
+if (refCount.count === 0) {
+  const users = db.prepare("SELECT id FROM users LIMIT 3").all() as any[];
+  if (users.length >= 2) {
+    db.prepare("INSERT INTO referrals (referrer_id, referred_id, status) VALUES (?, ?, 'COMPLETED')")
+      .run(users[0].id, users[1].id);
+
+    db.prepare("INSERT INTO commission_payouts (user_id, amount, source_type, status) VALUES (?, ?, 'SYNDICATION_REFERRAL', 'PENDING')")
+      .run(users[0].id, 1250.50);
+  }
 }
 
 async function startServer() {
@@ -502,6 +660,150 @@ async function startServer() {
     try {
       const settings = db.prepare("SELECT * FROM deal_hunter_settings WHERE user_id = ?").get(req.user.id);
       res.json(settings || { is_active: 0, discount_threshold: 15, max_bid_usd: 2000000, auto_eoi_drafting: 1, strategy_notes: 'distress' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Syndication (Fractional Ownership) Endpoints
+  app.get("/api/syndicates", authenticateToken, (req, res) => {
+    try {
+      const syndicates = db.prepare(`
+        SELECT s.*, p.name as project_name, p.country, p.city_district as city 
+        FROM syndicates s 
+        JOIN projects p ON s.project_id = p.id 
+        WHERE s.status = 'OPEN'
+      `).all();
+      res.json(syndicates);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/syndicates", authenticateToken, (req: any, res) => {
+    try {
+      const { project_id, total_valuation, min_investment } = req.body;
+      const result = db.prepare(`
+        INSERT INTO syndicates (project_id, total_valuation, available_equity, min_investment)
+        VALUES (?, ?, 100, ?)
+      `).run(project_id, total_valuation, min_investment);
+      res.json({ id: result.lastInsertRowid });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/syndicates/:id/invest", authenticateToken, (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { amount } = req.body;
+      const userId = req.user.id;
+
+      const syndicate = db.prepare("SELECT * FROM syndicates WHERE id = ?").get(id) as any;
+      if (!syndicate || syndicate.status !== 'OPEN') {
+        return res.status(404).json({ error: "Syndicate not found or closed" });
+      }
+
+      const equityPercentage = (amount / syndicate.total_valuation) * 100;
+      if (equityPercentage > syndicate.available_equity) {
+        return res.status(400).json({ error: "Not enough equity available" });
+      }
+
+      const transaction = db.transaction(() => {
+        db.prepare("INSERT INTO syndicate_investments (syndicate_id, user_id, investment_amount, equity_percentage) VALUES (?, ?, ?, ?)")
+          .run(id, userId, amount, equityPercentage);
+
+        const newEquity = syndicate.available_equity - equityPercentage;
+        const status = newEquity <= 0.01 ? 'FILLED' : 'OPEN';
+
+        db.prepare("UPDATE syndicates SET available_equity = ?, status = ? WHERE id = ?")
+          .run(newEquity, status, id);
+      });
+
+      transaction();
+      logActivity(userId, "INVESTMENT_MADE", `Invested $${amount} for ${equityPercentage.toFixed(2)}% equity in a property syndicate.`);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Phase 2: Trust Vault & Milestone API
+  app.get("/api/legal/documents/:projectId", authenticateToken, (req, res) => {
+    try {
+      const docs = db.prepare("SELECT * FROM legal_documents WHERE project_id = ?").all(req.params.projectId);
+      res.json(docs);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/legal/sign", authenticateToken, (req: any, res) => {
+    try {
+      const { document_id, signature_hash } = req.body;
+      const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+      db.prepare("INSERT INTO document_signatures (document_id, user_id, signature_hash, ip_address) VALUES (?, ?, ?, ?)")
+        .run(document_id, req.user.id, signature_hash, ip);
+      logActivity(req.user.id, "DOC_SIGNED", `Digitally signed legal document ID: ${document_id}`);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/projects/:id/milestones", authenticateToken, (req, res) => {
+    try {
+      const milestones = db.prepare("SELECT * FROM project_milestones WHERE project_id = ? ORDER BY due_date ASC").all(req.params.id);
+      res.json(milestones);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/escrow/fund", authenticateToken, (req: any, res) => {
+    try {
+      const { milestone_id, amount } = req.body;
+      db.transaction(() => {
+        db.prepare("UPDATE project_milestones SET status = 'FUNDED' WHERE id = ?").run(milestone_id);
+        db.prepare("INSERT INTO escrow_vault (milestone_id, amount, status) VALUES (?, ?, 'HELD')").run(milestone_id, amount);
+      })();
+      logActivity(req.user.id, "ESCROW_FUNDED", `Funded escrow for milestone ID: ${milestone_id}`);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Phase 3: Referral API
+  app.get("/api/referrals", authenticateToken, (req: any, res) => {
+    try {
+      const referrals = db.prepare(`
+        SELECT u.id, u.name, u.tier, u.created_at, r.status
+        FROM referrals r
+        JOIN users u ON r.referred_id = u.id
+        WHERE r.referrer_id = ?
+      `).all(req.user.id);
+      res.json(referrals);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/referrals/stats", authenticateToken, (req: any, res) => {
+    try {
+      const totalReferred = db.prepare("SELECT COUNT(*) as count FROM referrals WHERE referrer_id = ?").get(req.user.id) as any;
+      const commissions = db.prepare(`
+        SELECT 
+          SUM(CASE WHEN status = 'PENDING' THEN amount ELSE 0 END) as pending,
+          SUM(CASE WHEN status = 'PAID' THEN amount ELSE 0 END) as paid
+        FROM commission_payouts WHERE user_id = ?
+      `).get(req.user.id) as any;
+
+      res.json({
+        total_referred: totalReferred.count,
+        pending_commissions: commissions.pending || 0,
+        paid_commissions: commissions.paid || 0
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

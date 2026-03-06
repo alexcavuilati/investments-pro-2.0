@@ -276,3 +276,16 @@ export interface KYCDocument {
   file_path: string;
   uploaded_at: string;
 }
+
+export interface Syndicate {
+  id: number;
+  project_id: number;
+  project_name: string;
+  total_valuation: number;
+  available_equity: number;
+  min_investment: number;
+  status: 'OPEN' | 'FILLED' | 'CLOSED';
+  country?: string;
+  city?: string;
+  created_at: string;
+}
