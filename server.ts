@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
-import admin from "firebase-admin";
+import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createServer } from "http";
@@ -14,30 +14,147 @@ import bcrypt from "bcryptjs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Initialize Firebase Admin
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
-}
-
-const firestore = admin.firestore();
+// Initialize Database
+const db = new Database("investments_pro.db");
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-investment-pro-key";
 
-// Helper for Firestore
-const getDocs = async (collection: string) => {
-  const snapshot = await firestore.collection(collection).get();
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-};
+// Create Tables
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE,
+    password TEXT,
+    name TEXT,
+    tier TEXT DEFAULT 'STANDARD',
+    kyc_status TEXT DEFAULT 'PENDING',
+    proof_of_funds_usd REAL DEFAULT 0,
+    entity_type TEXT DEFAULT 'Individual',
+    country_of_origin TEXT DEFAULT 'AU',
+    bio TEXT,
+    avatar_url TEXT,
+    phone TEXT,
+    trial_ends_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 
-const getDoc = async (collection: string, id: string) => {
-  const doc = await firestore.collection(collection).doc(id).get();
-  return doc.exists ? { id: doc.id, ...doc.data() } : null;
-};
+  CREATE TABLE IF NOT EXISTS friends (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    friend_id INTEGER,
+    status TEXT DEFAULT 'PENDING',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id),
+    FOREIGN KEY(friend_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id INTEGER,
+    receiver_id INTEGER,
+    content TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(sender_id) REFERENCES users(id),
+    FOREIGN KEY(receiver_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    project_id INTEGER,
+    rating INTEGER,
+    comment TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS kyc_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    type TEXT,
+    file_name TEXT,
+    file_path TEXT,
+    uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    name TEXT,
+    country TEXT,
+    state_province TEXT,
+    city_district TEXT,
+    purchase_price REAL,
+    fiscal_variables TEXT,
+    projected_roi REAL,
+    irr REAL,
+    npv_estimate REAL,
+    loan_readiness_score INTEGER,
+    eoi_ready INTEGER DEFAULT 0,
+    jurisdiction_laws TEXT,
+    risk_assessment TEXT,
+    climate_risk TEXT,
+    iot_twin TEXT,
+    liquidity TEXT,
+    deal_hunter TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS deal_hunter_settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    is_active INTEGER DEFAULT 0,
+    discount_threshold REAL,
+    max_bid_usd REAL,
+    auto_eoi_drafting INTEGER DEFAULT 0,
+    strategy_notes TEXT,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS news (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    content TEXT,
+    country TEXT,
+    category TEXT,
+    published_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS activity_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    action TEXT,
+    details TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    content TEXT,
+    image_url TEXT,
+    likes INTEGER DEFAULT 0,
+    type TEXT DEFAULT 'NORMAL',
+    country TEXT,
+    city TEXT,
+    price REAL,
+    rent REAL,
+    analysis_results TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS notification_preferences (
+    user_id INTEGER PRIMARY KEY,
+    email_alerts INTEGER DEFAULT 1,
+    push_notifications INTEGER DEFAULT 1,
+    market_updates INTEGER DEFAULT 1,
+    deal_alerts INTEGER DEFAULT 1,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+`);
 
 // Middleware for authentication
 const authenticateToken = (req: any, res: any, next: any) => {
@@ -54,20 +171,13 @@ const authenticateToken = (req: any, res: any, next: any) => {
 };
 
 // Seed some news if empty
-const seedNews = async () => {
-  const newsSnapshot = await firestore.collection("news").limit(1).get();
-  if (newsSnapshot.empty) {
-    const news = [
-      { title: "Fiji SLIP Tax Update 2026", content: "New amendments to the Short Life Investment Package (SLIP) provide 10-year tax holidays for hotel developments over $7M FJD.", country: "Fiji", category: "Tax", published_at: new Date().toISOString() },
-      { title: "Australia FIRB Thresholds Adjusted", content: "Foreign Investment Review Board (FIRB) has increased thresholds for commercial real estate acquisitions in Sydney and Melbourne.", country: "Australia", category: "Legal", published_at: new Date().toISOString() },
-      { title: "UAE Golden Visa Expansion", content: "Dubai announces new pathways for property investors to secure 10-year residency with reduced minimum investment requirements.", country: "UAE", category: "Legal", published_at: new Date().toISOString() }
-    ];
-    for (const item of news) {
-      await firestore.collection("news").add(item);
-    }
-  }
-};
-seedNews();
+const newsCount = db.prepare("SELECT COUNT(*) as count FROM news").get() as { count: number };
+if (newsCount.count === 0) {
+  const insertNews = db.prepare("INSERT INTO news (title, content, country, category) VALUES (?, ?, ?, ?)");
+  insertNews.run("Fiji SLIP Tax Update 2026", "New amendments to the Short Life Investment Package (SLIP) provide 10-year tax holidays for hotel developments over $7M FJD.", "Fiji", "Tax");
+  insertNews.run("Australia FIRB Thresholds Adjusted", "Foreign Investment Review Board (FIRB) has increased thresholds for commercial real estate acquisitions in Sydney and Melbourne.", "Australia", "Legal");
+  insertNews.run("UAE Golden Visa Expansion", "Dubai announces new pathways for property investors to secure 10-year residency with reduced minimum investment requirements.", "UAE", "Legal");
+}
 
 async function startServer() {
   const app = express();
@@ -75,102 +185,54 @@ async function startServer() {
   const io = new Server(httpServer, {
     cors: { origin: "*" }
   });
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3000;
 
   app.use(express.json());
   app.use(cors());
 
   // Activity Logs
-  const logActivity = async (userId: string, action: string, details: string) => {
-    await firestore.collection("activity_logs").add({
-      user_id: userId,
-      action,
-      details,
-      created_at: new Date().toISOString()
-    });
+  const logActivity = (userId: number | string, action: string, details: string) => {
+    db.prepare("INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)")
+      .run(userId, action, details);
   };
 
-  app.get("/api/activity", authenticateToken, async (req: any, res: any) => {
-    try {
-      const logs = await firestore.collection("activity_logs")
-        .where("user_id", "==", req.user.id)
-        .orderBy("created_at", "desc")
-        .limit(20)
-        .get();
-      res.json(logs.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
+  app.get("/api/activity", authenticateToken, (req: any, res) => {
+    const logs = db.prepare("SELECT * FROM activity_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT 20")
+      .all(req.user.id);
+    res.json(logs);
   });
 
   // Posts / Home Feed
-  app.get("/api/posts", authenticateToken, async (req: any, res: any) => {
-    try {
-      const postsSnapshot = await firestore.collection("posts")
-        .orderBy("created_at", "desc")
-        .get();
-
-      const posts = [];
-      for (const doc of postsSnapshot.docs) {
-        const postData = doc.data();
-        const user = await getDoc("users", postData.user_id) as any;
-        posts.push({
-          id: doc.id,
-          ...postData,
-          user_name: user?.name || "Unknown",
-          avatar_url: user?.avatar_url || ""
-        });
-      }
-      res.json(posts);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
+  app.get("/api/posts", authenticateToken, (req, res) => {
+    const posts = db.prepare(`
+      SELECT p.*, u.name as user_name, u.avatar_url 
+      FROM posts p 
+      JOIN users u ON p.user_id = u.id 
+      ORDER BY p.created_at DESC
+    `).all();
+    res.json(posts);
   });
 
-  app.post("/api/posts", authenticateToken, async (req: any, res: any) => {
-    try {
-      const { content, image_url, type, country, city, price, rent } = req.body;
-      const post = {
-        user_id: req.user.id,
-        content,
-        image_url,
-        type: type || 'NORMAL',
-        country,
-        city,
-        price,
-        rent,
-        likes: 0,
-        created_at: new Date().toISOString()
-      };
-      await firestore.collection("posts").add(post);
-      logActivity(req.user.id, "POST_CREATED", `Created a new ${type || 'NORMAL'} post on the home feed`);
-      res.json({ success: true });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
+  app.post("/api/posts", authenticateToken, (req: any, res: any) => {
+    const { content, image_url, type, country, city, price, rent } = req.body;
+    db.prepare("INSERT INTO posts (user_id, content, image_url, type, country, city, price, rent) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(req.user.id, content, image_url, type || 'NORMAL', country, city, price, rent);
+    logActivity(req.user.id, "POST_CREATED", `Created a new ${type || 'NORMAL'} post on the home feed`);
+    res.json({ success: true });
   });
 
-  app.post("/api/posts/:id/like", authenticateToken, async (req: any, res: any) => {
-    try {
-      const postRef = firestore.collection("posts").doc(req.params.id);
-      const post = await postRef.get();
-      if (!post.exists) return res.status(404).json({ error: "Post not found" });
-
-      const currentLikes = post.data()?.likes || 0;
-      await postRef.update({ likes: currentLikes + 1 });
-      res.json({ success: true, likes: currentLikes + 1 });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
+  app.post("/api/posts/:id/like", authenticateToken, (req: any, res: any) => {
+    const { id } = req.params;
+    db.prepare("UPDATE posts SET likes = likes + 1 WHERE id = ?").run(id);
+    const post = db.prepare("SELECT likes FROM posts WHERE id = ?").get(id) as any;
+    res.json({ success: true, likes: post.likes });
   });
 
   app.post("/api/posts/:id/analysis", authenticateToken, async (req: any, res: any) => {
     const { id } = req.params;
     const { analysis } = req.body;
     try {
-      await firestore.collection("posts").doc(id).update({
-        analysis_results: JSON.stringify(analysis)
-      });
+      db.prepare("UPDATE posts SET analysis_results = ? WHERE id = ?").run(JSON.stringify(analysis), id);
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -178,42 +240,32 @@ async function startServer() {
   });
 
   // Notification Preferences
-  app.get("/api/notifications/settings", authenticateToken, async (req: any, res: any) => {
-    try {
-      const settings = await getDoc("notification_preferences", req.user.id);
-      res.json(settings || { email_alerts: 1, push_notifications: 1, market_updates: 1, deal_alerts: 1 });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+  app.get("/api/notifications/settings", authenticateToken, (req: any, res) => {
+    let settings = db.prepare("SELECT * FROM notification_preferences WHERE user_id = ?").get(req.user.id);
+    if (!settings) {
+      db.prepare("INSERT INTO notification_preferences (user_id) VALUES (?)").run(req.user.id);
+      settings = db.prepare("SELECT * FROM notification_preferences WHERE user_id = ?").get(req.user.id);
     }
+    res.json(settings);
   });
 
-  app.put("/api/notifications/settings", authenticateToken, async (req: any, res: any) => {
-    try {
-      const { email_alerts, push_notifications, market_updates, deal_alerts } = req.body;
-      await firestore.collection("notification_preferences").doc(req.user.id).set({
-        email_alerts: email_alerts ? 1 : 0,
-        push_notifications: push_notifications ? 1 : 0,
-        market_updates: market_updates ? 1 : 0,
-        deal_alerts: deal_alerts ? 1 : 0
-      }, { merge: true });
-      res.json({ success: true });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
+  app.put("/api/notifications/settings", authenticateToken, (req: any, res) => {
+    const { email_alerts, push_notifications, market_updates, deal_alerts } = req.body;
+    db.prepare(`
+      UPDATE notification_preferences 
+      SET email_alerts = ?, push_notifications = ?, market_updates = ?, deal_alerts = ? 
+      WHERE user_id = ?
+    `).run(email_alerts ? 1 : 0, push_notifications ? 1 : 0, market_updates ? 1 : 0, deal_alerts ? 1 : 0, req.user.id);
+    res.json({ success: true });
   });
 
   // Profile Update
-  app.put("/api/user/profile", authenticateToken, async (req: any, res: any) => {
-    try {
-      const { name, bio, phone, avatar_url } = req.body;
-      await firestore.collection("users").doc(req.user.id).update({
-        name, bio, phone, avatar_url
-      });
-      logActivity(req.user.id, "PROFILE_UPDATED", "Updated profile information");
-      res.json({ success: true });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
+  app.put("/api/user/profile", authenticateToken, (req: any, res) => {
+    const { name, bio, phone, avatar_url } = req.body;
+    db.prepare("UPDATE users SET name = ?, bio = ?, phone = ?, avatar_url = ? WHERE id = ?")
+      .run(name, bio, phone, avatar_url, req.user.id);
+    logActivity(req.user.id, "PROFILE_UPDATED", "Updated profile information");
+    res.json({ success: true });
   });
 
   // Auth Routes
@@ -226,26 +278,16 @@ async function startServer() {
       const trialEndsAt = new Date();
       trialEndsAt.setDate(trialEndsAt.getDate() + 3);
 
-      const userRef = firestore.collection("users").doc();
-      const userData = {
-        email,
-        password: hashedPassword,
-        name,
-        tier: 'STANDARD',
-        kyc_status: 'PENDING',
-        proof_of_funds_usd: 0,
-        entity_type: 'Individual',
-        country_of_origin: 'AU',
-        trial_ends_at: trialEndsAt.toISOString(),
-        created_at: new Date().toISOString()
-      };
+      const result = db.prepare("INSERT INTO users (email, password, name, trial_ends_at) VALUES (?, ?, ?, ?)")
+        .run(email, hashedPassword, name, trialEndsAt.toISOString());
 
-      await userRef.set(userData);
-
-      const user = { id: userRef.id, email, name, trial_ends_at: userData.trial_ends_at };
+      const user = { id: result.lastInsertRowid, email, name, trial_ends_at: trialEndsAt.toISOString() };
       const token = jwt.sign(user, JWT_SECRET, { expiresIn: '24h' });
       res.json({ token, user });
     } catch (error: any) {
+      if (error.message.includes('UNIQUE constraint failed')) {
+        return res.status(400).json({ error: "Email already exists" });
+      }
       res.status(500).json({ error: error.message });
     }
   });
@@ -253,16 +295,9 @@ async function startServer() {
   app.post("/api/auth/login", async (req, res) => {
     try {
       const { email, password } = req.body;
-      const userSnapshot = await firestore.collection("users").where("email", "==", email).limit(1).get();
+      const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email) as any;
 
-      if (userSnapshot.empty) {
-        return res.status(401).json({ error: "Invalid credentials" });
-      }
-
-      const userDoc = userSnapshot.docs[0];
-      const user = { id: userDoc.id, ...userDoc.data() } as any;
-
-      if (!(await bcrypt.compare(password, user.password))) {
+      if (!user || !(await bcrypt.compare(password, user.password))) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
@@ -274,8 +309,8 @@ async function startServer() {
     }
   });
 
-  app.get("/api/auth/me", authenticateToken, async (req: any, res: any) => {
-    const user = await getDoc("users", req.user.id);
+  app.get("/api/auth/me", authenticateToken, (req: any, res) => {
+    const user = db.prepare("SELECT id, email, name, tier, kyc_status, proof_of_funds_usd, entity_type, country_of_origin, bio, phone, avatar_url, trial_ends_at FROM users WHERE id = ?").get(req.user.id);
     res.json(user);
   });
 
@@ -285,14 +320,11 @@ async function startServer() {
       socket.join(`user_${userId}`);
     });
 
-    socket.on("send_message", async (data) => {
+    socket.on("send_message", (data) => {
       const { sender_id, receiver_id, content } = data;
-      await firestore.collection("messages").add({
-        sender_id,
-        receiver_id,
-        content,
-        created_at: new Date().toISOString()
-      });
+      db.prepare("INSERT INTO messages (sender_id, receiver_id, content) VALUES (?, ?, ?)").run(
+        sender_id, receiver_id, content
+      );
       io.to(`user_${receiver_id}`).emit("new_message", data);
       io.to(`user_${sender_id}`).emit("new_message", data);
     });
@@ -303,159 +335,161 @@ async function startServer() {
   });
 
   // API Routes
-  app.post("/api/feedback", authenticateToken, async (req: any, res: any) => {
+  app.post("/api/feedback", authenticateToken, (req: any, res) => {
     try {
       const { project_id, rating, comment } = req.body;
-      await firestore.collection("feedback").add({
-        user_id: req.user.id,
-        project_id,
-        rating,
-        comment,
-        created_at: new Date().toISOString()
-      });
+      db.prepare("INSERT INTO feedback (user_id, project_id, rating, comment) VALUES (?, ?, ?, ?)")
+        .run(req.user.id, project_id, rating, comment);
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/user", authenticateToken, async (req: any, res: any) => {
+  app.get("/api/user", authenticateToken, (req: any, res) => {
     try {
-      const user = await getDoc("users", req.user.id);
+      const user = db.prepare("SELECT id, email, name, tier, kyc_status, proof_of_funds_usd, entity_type, country_of_origin, bio, phone, avatar_url FROM users WHERE id = ?").get(req.user.id);
       res.json(user);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/users", authenticateToken, async (req: any, res: any) => {
-    const users = await getDocs("users");
-    res.json(users.map((u: any) => ({ id: u.id, name: u.name, email: u.email, kyc_status: u.kyc_status })));
+  app.get("/api/users", authenticateToken, (req, res) => {
+    const users = db.prepare("SELECT id, name, email, kyc_status FROM users").all();
+    res.json(users);
   });
 
-  app.get("/api/friends", authenticateToken, async (req: any, res: any) => {
+  app.get("/api/friends", authenticateToken, (req: any, res) => {
     const userId = req.user.id;
-    const friendsSnapshot = await firestore.collection("friends")
-      .where("user_id", "==", userId)
-      .get();
-    const friendsSnapshot2 = await firestore.collection("friends")
-      .where("friend_id", "==", userId)
-      .get();
-
-    const friendIds = new Set();
-    friendsSnapshot.docs.forEach(doc => friendIds.add(doc.data().friend_id));
-    friendsSnapshot2.docs.forEach(doc => friendIds.add(doc.data().user_id));
-
-    const friends = [];
-    for (const id of Array.from(friendIds)) {
-      const user = await getDoc("users", id as string);
-      if (user) friends.push({ ...user, status: 'ACCEPTED' });
-    }
+    const friends = db.prepare(`
+      SELECT u.id, u.name, u.email, f.status 
+      FROM users u 
+      JOIN friends f ON (u.id = f.friend_id OR u.id = f.user_id)
+      WHERE (f.user_id = ? OR f.friend_id = ?) AND u.id != ?
+    `).all(userId, userId, userId);
     res.json(friends);
   });
 
-  app.post("/api/friends", authenticateToken, async (req: any, res: any) => {
+  app.post("/api/friends", authenticateToken, (req: any, res) => {
     const { friend_id } = req.body;
-    await firestore.collection("friends").add({
-      user_id: req.user.id,
-      friend_id,
-      status: 'ACCEPTED',
-      created_at: new Date().toISOString()
-    });
+    db.prepare("INSERT INTO friends (user_id, friend_id, status) VALUES (?, ?, 'ACCEPTED')").run(req.user.id, friend_id);
     res.json({ success: true });
   });
 
-  app.get("/api/messages/:friendId", authenticateToken, async (req: any, res: any) => {
+  app.get("/api/messages/:friendId", authenticateToken, (req: any, res) => {
     const userId = req.user.id;
     const { friendId } = req.params;
-    const m1 = await firestore.collection("messages")
-      .where("sender_id", "==", userId)
-      .where("receiver_id", "==", friendId)
-      .get();
-    const m2 = await firestore.collection("messages")
-      .where("sender_id", "==", friendId)
-      .where("receiver_id", "==", userId)
-      .get();
-
-    const messages = [...m1.docs, ...m2.docs]
-      .map(doc => ({ id: doc.id, ...doc.data() }))
-      .sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-
+    const messages = db.prepare(`
+      SELECT * FROM messages 
+      WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+      ORDER BY created_at ASC
+    `).all(userId, friendId, friendId, userId);
     res.json(messages);
   });
 
-  app.get("/api/news", async (req, res) => {
+  app.get("/api/news", (req, res) => {
     try {
-      const news = await getDocs("news");
+      const news = db.prepare("SELECT * FROM news ORDER BY published_at DESC").all();
       res.json(news);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/projects", authenticateToken, async (req: any, res: any) => {
+  app.get("/api/projects", authenticateToken, (req: any, res) => {
     try {
-      const projects = await firestore.collection("projects")
-        .where("user_id", "==", req.user.id)
-        .orderBy("created_at", "desc")
-        .get();
-      res.json(projects.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const projects = db.prepare("SELECT * FROM projects WHERE user_id = ? ORDER BY created_at DESC").all(req.user.id).map((p: any) => ({
+        ...p,
+        fiscal_variables: p.fiscal_variables ? JSON.parse(p.fiscal_variables) : null,
+        eoi_ready: !!p.eoi_ready,
+        npv_estimate: p.npv_estimate,
+        jurisdiction_laws: p.jurisdiction_laws ? JSON.parse(p.jurisdiction_laws) : null,
+        risk_assessment: p.risk_assessment ? JSON.parse(p.risk_assessment) : null,
+        climate_risk: p.climate_risk ? JSON.parse(p.climate_risk) : null,
+        iot_twin: p.iot_twin ? JSON.parse(p.iot_twin) : null,
+        liquidity: p.liquidity ? JSON.parse(p.liquidity) : null,
+        deal_hunter: p.deal_hunter ? JSON.parse(p.deal_hunter) : null
+      }));
+      res.json(projects);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.post("/api/projects", authenticateToken, async (req: any, res: any) => {
+  app.post("/api/projects", authenticateToken, (req: any, res) => {
     try {
-      const project = {
-        ...req.body,
-        user_id: req.user.id,
-        created_at: new Date().toISOString()
-      };
-      const docRef = await firestore.collection("projects").add(project);
-      logActivity(req.user.id, "PROJECT_SAVED", `Saved a new investment project: ${req.body.name}`);
-      res.json({ id: docRef.id });
+      const {
+        name, country, state_province, city_district,
+        purchase_price, fiscal_variables,
+        projected_roi, irr, npv_estimate, loan_readiness_score, eoi_ready,
+        jurisdiction_laws, risk_assessment, climate_risk, iot_twin, liquidity, deal_hunter
+      } = req.body;
+
+      const result = db.prepare(`
+        INSERT INTO projects (
+          user_id, name, country, state_province, city_district, 
+          purchase_price, fiscal_variables,
+          projected_roi, irr, npv_estimate, loan_readiness_score, eoi_ready, 
+          jurisdiction_laws, risk_assessment, climate_risk, iot_twin, liquidity, deal_hunter
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        req.user.id, name, country, state_province, city_district,
+        purchase_price, JSON.stringify(fiscal_variables),
+        projected_roi, irr, npv_estimate, loan_readiness_score, eoi_ready ? 1 : 0,
+        jurisdiction_laws ? JSON.stringify(jurisdiction_laws) : null,
+        risk_assessment ? JSON.stringify(risk_assessment) : null,
+        climate_risk ? JSON.stringify(climate_risk) : null,
+        iot_twin ? JSON.stringify(iot_twin) : null,
+        liquidity ? JSON.stringify(liquidity) : null,
+        deal_hunter ? JSON.stringify(deal_hunter) : null
+      );
+      logActivity(req.user.id, "PROJECT_SAVED", `Saved a new investment project: ${name}`);
+      res.json({ id: result.lastInsertRowid });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/kyc", authenticateToken, async (req: any, res: any) => {
+  app.get("/api/kyc", authenticateToken, (req: any, res) => {
     try {
-      const docs = await firestore.collection("kyc_documents")
-        .where("user_id", "==", req.user.id)
-        .get();
-      res.json(docs.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const docs = db.prepare("SELECT * FROM kyc_documents WHERE user_id = ?").all(req.user.id);
+      res.json(docs);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.post("/api/kyc", authenticateToken, async (req: any, res: any) => {
+  app.post("/api/kyc", authenticateToken, (req: any, res) => {
     try {
       const { type, fileName } = req.body;
-      const doc = {
-        user_id: req.user.id,
-        type,
-        file_name: fileName,
-        file_path: `/uploads/${fileName}`,
-        uploaded_at: new Date().toISOString()
-      };
-      await firestore.collection("kyc_documents").add(doc);
+      db.prepare("INSERT INTO kyc_documents (user_id, type, file_name, file_path) VALUES (?, ?, ?, ?)")
+        .run(req.user.id, type, fileName, `/uploads/${fileName}`);
       logActivity(req.user.id, "KYC_UPLOADED", `Uploaded a new KYC document: ${type}`);
       res.json({ success: true });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
+    } catch (error) {
+      res.status(500).json({ error: "KYC Upload failed" });
     }
   });
 
   // Deal Hunter Settings
-  app.post("/api/deal-hunter/settings", authenticateToken, async (req: any, res: any) => {
+  app.post("/api/deal-hunter/settings", authenticateToken, (req: any, res) => {
     try {
       const { is_active, discount_threshold, max_bid_usd, auto_eoi_drafting, strategy_notes } = req.body;
-      await firestore.collection("deal_hunter_settings").doc(req.user.id).set({
-        is_active, discount_threshold, max_bid_usd, auto_eoi_drafting, strategy_notes
-      }, { merge: true });
+      const existing = db.prepare("SELECT id FROM deal_hunter_settings WHERE user_id = ?").get(req.user.id);
+
+      if (existing) {
+        db.prepare(`
+          UPDATE deal_hunter_settings 
+          SET is_active = ?, discount_threshold = ?, max_bid_usd = ?, auto_eoi_drafting = ?, strategy_notes = ?
+          WHERE user_id = ?
+        `).run(is_active ? 1 : 0, discount_threshold, max_bid_usd, auto_eoi_drafting ? 1 : 0, strategy_notes, req.user.id);
+      } else {
+        db.prepare(`
+          INSERT INTO deal_hunter_settings (user_id, is_active, discount_threshold, max_bid_usd, auto_eoi_drafting, strategy_notes)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(req.user.id, is_active ? 1 : 0, discount_threshold, max_bid_usd, auto_eoi_drafting ? 1 : 0, strategy_notes);
+      }
 
       logActivity(req.user.id, "DEAL_HUNTER_CONFIGURED", "Updated Deal Hunter agent settings");
       res.json({ success: true });
@@ -464,9 +498,9 @@ async function startServer() {
     }
   });
 
-  app.get("/api/deal-hunter/settings", authenticateToken, async (req: any, res: any) => {
+  app.get("/api/deal-hunter/settings", authenticateToken, (req: any, res) => {
     try {
-      const settings = await getDoc("deal_hunter_settings", req.user.id);
+      const settings = db.prepare("SELECT * FROM deal_hunter_settings WHERE user_id = ?").get(req.user.id);
       res.json(settings || { is_active: 0, discount_threshold: 15, max_bid_usd: 2000000, auto_eoi_drafting: 1, strategy_notes: 'distress' });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -521,10 +555,10 @@ async function startServer() {
     }
   });
 
-  app.post("/api/update-tier", authenticateToken, async (req: any, res: any) => {
+  app.post("/api/update-tier", authenticateToken, (req: any, res) => {
     try {
       const { tier } = req.body;
-      await firestore.collection("users").doc(req.user.id).update({ tier });
+      db.prepare("UPDATE users SET tier = ? WHERE id = ?").run(tier, req.user.id);
       logActivity(req.user.id, "SUBSCRIPTION_UPGRADED", `Upgraded subscription to ${tier} tier`);
       res.json({ success: true });
     } catch (error: any) {
@@ -616,7 +650,7 @@ async function startServer() {
     });
   }
 
-  httpServer.listen(PORT, "0.0.0.0", () => {
+  httpServer.listen(Number(PORT), "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
